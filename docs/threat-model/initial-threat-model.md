@@ -1,3 +1,11 @@
+# Initial Threat Model
+
+**Project:** FinTechCo Azure Enterprise Cloud Security Platform  
+**Status:** Initial design baseline — not yet implementation-validated  
+**Method:** STRIDE  
+**Milestone:** M1 — Foundation + Architecture  
+**Last updated:** 2026-10-01
+
 ## 1. Scope and assumptions
 
 This document is an initial, architecture-driven STRIDE threat model for FinTechCo’s internet-facing Azure application platform.
@@ -118,7 +126,7 @@ If successful, the attacker could run Terraform with Azure permissions, modify i
 #### Planned detection and evidence
 
 - Retain GitHub Actions workflow logs for deployment activity.
-- Monitor Azure Activity Log for role assignments, federated credential changes, and security-sensitive resource changes.
+- Monitor Microsoft Entra audit logs for application and federated credential changes, and Azure Activity Log for role assignments and security-sensitive resource changes.
 - Record the federated credential configuration and RBAC assignments as repository evidence.
 
 #### Validation actions
@@ -468,7 +476,7 @@ Planned. Primary implementation and validation: **M3**, **M4**, and **M5**.
 
 ### TM-10 — Unrestricted or malicious outbound network egress
 
-- **STRIDE:** Information Disclosure, Command and Control
+- **STRIDE:** Information Disclosure
 - **Trust boundary:** TB-7
 - **Affected assets:** A-01 customer financial records, A-02 Storage objects, A-03 Key Vault material, A-07 application runtime identity.
 - **Initial risk:** Medium
@@ -523,6 +531,8 @@ Planned. Primary implementation and validation: **M4** and **M7**.
 This threat model is intentionally focused on the material attack paths of the project. It does not claim complete threat coverage, formal compliance, or production operation.
 
 The Azure for Students lab uses one subscription and documents, rather than recreates permanently, production features such as management groups, multiple subscriptions, hub-and-spoke networking, Application Gateway WAF, centralized Azure Firewall egress, PIM, Conditional Access, extended telemetry retention, and selected Defender or Sentinel capabilities.
+
+> **M2 design decision:** The Terraform state backend requires a documented access model. If public network access is disabled, Terraform must run from a private network path, such as a self-hosted runner or approved private workstation. The selected model must balance state exposure, GitHub Actions compatibility, cost, and operational complexity.
 
 A control remains `Planned` until it is implemented. It becomes `Validated` only after its validation action passes and evidence is committed or referenced in the repository.
 
