@@ -48,3 +48,22 @@ jobs:
 
       - name: Terraform validate
         run: terraform validate
+      - name: Setup TFLint
+        uses: terraform-linters/setup-tflint@v6
+        with:
+          tflint_version: v0.64.0
+
+      - name: Initialize TFLint
+        run: tflint --init --config="$GITHUB_WORKSPACE/.tflint.hcl"
+
+      - name: Run TFLint
+        run: tflint --config="$GITHUB_WORKSPACE/.tflint.hcl"
+
+      - name: Run Checkov
+        uses: bridgecrewio/checkov-action@v12.1347.0
+        with:
+          directory: ${{ matrix.directory }}
+          framework: terraform
+          quiet: true
+          compact: true
+          soft_fail: false
