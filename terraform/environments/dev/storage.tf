@@ -4,7 +4,7 @@ resource "azurerm_storage_account" "app" {
   # checkov:skip=CKV_AZURE_33:Queue service is not used by this workload; service telemetry is implemented in the monitoring milestone.
   # checkov:skip=CKV2_AZURE_1:CMK is outside the current lab baseline; Azure-managed encryption is used.
   # checkov:skip=CKV2_AZURE_18:CMK is outside the current lab baseline; Azure-managed encryption is used.
-  
+
   name                = "stecspappdevjz"
   resource_group_name = data.azurerm_resource_group.dev.name
   location            = data.azurerm_resource_group.dev.location
