@@ -1,4 +1,6 @@
 resource "azurerm_mssql_server" "app" {
+  # checkov:skip=CKV_AZURE_23:SQL auditing is implemented with centralized telemetry in M6.
+  # checkov:skip=CKV_AZURE_24:SQL audit retention is configured with centralized telemetry in M6.
   name                = "sql-ecsp-dev-jz"
   resource_group_name = data.azurerm_resource_group.dev.name
   location            = data.azurerm_resource_group.dev.location

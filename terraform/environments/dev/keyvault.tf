@@ -1,4 +1,6 @@
 resource "azurerm_key_vault" "app" {
+  # checkov:skip=CKV_AZURE_42:DEV lab uses Azure Key Vault soft delete; purge protection is intentionally disabled to preserve disposable teardown.
+  # checkov:skip=CKV_AZURE_110:Purge protection is intentionally disabled for the disposable DEV lab; production reference enables it.
   name                = "kv-ecsp-dev-jz"
   resource_group_name = data.azurerm_resource_group.dev.name
   location            = data.azurerm_resource_group.dev.location

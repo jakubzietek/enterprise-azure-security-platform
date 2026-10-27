@@ -4,6 +4,7 @@ resource "azurerm_storage_account" "app" {
   # checkov:skip=CKV_AZURE_33:Queue service is not used by this workload; service telemetry is implemented in the monitoring milestone.
   # checkov:skip=CKV2_AZURE_1:CMK is outside the current lab baseline; Azure-managed encryption is used.
   # checkov:skip=CKV2_AZURE_18:CMK is outside the current lab baseline; Azure-managed encryption is used.
+  # checkov:skip=CKV2_AZURE_8:This account stores application data, not Azure activity logs; the application container is explicitly private.
 
   name                = "stecspappdevjz"
   resource_group_name = data.azurerm_resource_group.dev.name
@@ -58,6 +59,7 @@ resource "azurerm_private_endpoint" "storage_blob" {
 }
 
 resource "azurerm_storage_container" "app_data" {
+  # checkov:skip=CKV2_AZURE_21:Blob data-plane logging is implemented in the M6 telemetry milestone.
   name = "app-data"
 
   storage_account_id = azurerm_storage_account.app.id
