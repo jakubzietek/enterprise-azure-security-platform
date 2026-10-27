@@ -88,7 +88,9 @@ jobs:
     defaults:
       run:
         working-directory: terraform/environments/dev
-
+    env:
+      TF_VAR_sql_entra_admin_login: ${{ vars.SQL_ENTRA_ADMIN_LOGIN }}
+      TF_VAR_sql_entra_admin_object_id: ${{ vars.SQL_ENTRA_ADMIN_OBJECT_ID }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -128,7 +130,9 @@ jobs:
     defaults:
       run:
         working-directory: terraform/environments/dev
-
+    env:
+      TF_VAR_sql_entra_admin_login: ${{ vars.SQL_ENTRA_ADMIN_LOGIN }}
+      TF_VAR_sql_entra_admin_object_id: ${{ vars.SQL_ENTRA_ADMIN_OBJECT_ID }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
