@@ -30,7 +30,20 @@ resource "azurerm_linux_web_app" "app" {
     identity_ids = [azurerm_user_assigned_identity.app.id]
   }
 
+  app_settings = {
+    AZURE_CLIENT_ID                = azurerm_user_assigned_identity.app.client_id
+    STORAGE_ACCOUNT_NAME           = azurerm_storage_account.app.name
+    STORAGE_CONTAINER_NAME         = azurerm_storage_container.app_data.name
+    KEY_VAULT_URI                  = azurerm_key_vault.app.vault_uri
+    SCM_DO_BUILD_DURING_DEPLOYMENT = "true"
+    SQL_SERVER_FQDN                = azurerm_mssql_server.app.fully_qualified_domain_name
+    SQL_DATABASE_NAME              = azurerm_mssql_database.app.name
+  }
+
   site_config {
+    application_stack {
+      python_version = "3.12"
+    }
 
   }
 

@@ -40,7 +40,11 @@ resource "azurerm_private_dns_zone_virtual_network_link" "blob" {
   virtual_network_id   = azurerm_virtual_network.dev.id
   registration_enabled = false
 
-
+  tags = {
+    project     = "enterprise-cloud-security-platform"
+    environment = "dev"
+    managed_by  = "terraform"
+  }
 
 }
 
@@ -51,6 +55,11 @@ resource "azurerm_private_dns_zone_virtual_network_link" "sql" {
   virtual_network_id   = azurerm_virtual_network.dev.id
   registration_enabled = false
 
+  tags = {
+    project     = "enterprise-cloud-security-platform"
+    environment = "dev"
+    managed_by  = "terraform"
+  }
 
 
 }
@@ -61,6 +70,10 @@ resource "azurerm_private_dns_zone_virtual_network_link" "key_vault" {
   virtual_network_id   = azurerm_virtual_network.dev.id
   registration_enabled = false
 
-
+  tags = {
+    project     = "enterprise-cloud-security-platform"
+    environment = "dev"
+    managed_by  = "terraform"
+  }
 
 }

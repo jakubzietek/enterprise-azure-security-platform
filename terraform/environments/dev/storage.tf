@@ -56,3 +56,14 @@ resource "azurerm_private_endpoint" "storage_blob" {
     managed_by  = "terraform"
   }
 }
+
+resource "azurerm_storage_container" "app_data" {
+  name = "app-data"
+
+  storage_account_id = azurerm_storage_account.app.id
+
+  container_access_type = "private"
+
+
+
+}

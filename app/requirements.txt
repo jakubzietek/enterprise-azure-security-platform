@@ -1,0 +1,6 @@
+Flask
+gunicorn
+azure-identity
+azure-storage-blob
+azure-keyvault-secrets
+mssql-python
