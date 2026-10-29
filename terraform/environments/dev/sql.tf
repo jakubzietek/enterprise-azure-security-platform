@@ -1,6 +1,6 @@
 resource "azurerm_mssql_server" "app" {
   # checkov:skip=CKV2_AZURE_2:SQL Vulnerability Assessment storage integration is intentionally omitted in this disposable DEV lab; production would enable the supported Defender for SQL vulnerability assessment configuration.
-  # checkov:skip=CKV_AZURE_24:Experimental "dev" environment does not need 'greater than 90 days' auditing retention. 
+  # checkov:skip=CKV_AZURE_24:DEV uses shorter Log Analytics retention to control cost; production audit retention would follow security and compliance requirements.
   name                = "sql-ecsp-dev-jz"
   resource_group_name = data.azurerm_resource_group.dev.name
   location            = data.azurerm_resource_group.dev.location

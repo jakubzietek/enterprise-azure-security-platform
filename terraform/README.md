@@ -1,10 +1,10 @@
 # Terraform
 
-Terraform configuration for the Azure Enterprise Cloud Security Platform.
+Terraform configuration for the Azure security platform.
 
-The layout separates backend infrastructure from workload environments so application resources can be rebuilt without affecting the infrastructure that stores Terraform state.
+The configuration is split into separate roots so backend infrastructure, CI identity and application resources can be managed independently.
 
-## Structure
+## Layout
 
 ```text
 terraform/
@@ -14,195 +14,189 @@ terraform/
 │   ├── provider.tf
 │   └── versions.tf
 │
-├── environments/
-│   └── dev/
-│       ├── backend.tf
-│       ├── locals.tf
-│       ├── main.tf
-│       ├── outputs.tf
-│       ├── provider.tf
-│       ├── variables.tf
-│       └── versions.tf
+├── platform/
+│   ├── backend.tf
+│   ├── main.tf
+│   ├── outputs.tf
+│   ├── provider.tf
+│   └── versions.tf
 │
-└── modules/
+└── environments/
+    └── dev/
+        ├── app.tf
+        ├── backend.tf
+        ├── dns.tf
+        ├── keyvault.tf
+        ├── main.tf
+        ├── monitoring.tf
+        ├── network.tf
+        ├── outputs.tf
+        ├── policy.tf
+        ├── provider.tf
+        ├── rbac.tf
+        ├── sql.tf
+        ├── storage.tf
+        ├── variables.tf
+        └── versions.tf
 ```
 
-`modules/` is currently empty and will be populated only when reusable infrastructure patterns emerge.
+## Terraform roots
 
-## Remote state
+### `bootstrap`
 
-Terraform state is stored in Azure Blob Storage.
+Creates the infrastructure used to store Terraform state.
 
-The backend currently uses separate state files:
+The backend Storage Account uses:
 
-```text
-tfstate/
-├── bootstrap.tfstate
-└── dev.tfstate
-```
-
-`bootstrap.tfstate` manages the backend infrastructure itself.
-
-`dev.tfstate` manages the DEV environment.
-
-This allows the DEV environment to be destroyed and recreated independently of the Terraform backend.
-
-## Backend security
-
-The state Storage Account is configured with:
-
-- Microsoft Entra ID authentication
-- Azure RBAC for Blob access
-- Shared Key authentication disabled
+- Entra ID authentication
+- Shared Key disabled
 - anonymous Blob access disabled
-- HTTPS-only access
+- HTTPS only
 - TLS 1.2 minimum
 - Blob versioning
-- 7-day Blob soft delete
-- 7-day container soft delete
+- 7-day Blob and container soft delete
 
-The Storage Account retains a public network endpoint in the lab.
+Its public endpoint is intentionally retained so GitHub-hosted runners and local administration can reach the backend. Access to state is controlled with Entra ID and Azure RBAC.
 
-This is an intentional exception to the private-PaaS pattern used for application data services. It keeps the backend compatible with local development and future GitHub-hosted runners while state access remains protected by Entra ID and Azure RBAC.
+### `platform`
 
-A production implementation could instead use a Private Endpoint with a private or self-hosted runner.
+Creates resources that must survive normal DEV rebuilds:
 
-## Bootstrap
+- GitHub Actions managed identity
+- GitHub OIDC federated credential
+- CI RBAC assignments
+- identity resource group
+- DEV deployment resource group
 
-The backend was initially created using local Terraform state.
-
-After the Azure Storage backend was available, the bootstrap state was migrated using:
-
-```bash
-terraform init -migrate-state
-```
-
-Local state files were removed after confirming that Terraform could read the remote state and produce a clean plan.
-
-## Providers
-
-The project currently uses:
-
-- `hashicorp/azurerm` for standard Azure resources
-- `Azure/azapi` for the Terraform state Storage Account and related ARM resources
-
-Provider versions are constrained in Terraform configuration and resolved versions are stored in `.terraform.lock.hcl`.
-
-The lock files are committed to the repository.
-
-## AzAPI Storage Account
-
-The state Storage Account was initially created with `azurerm_storage_account`.
-
-Azure successfully created the account, but the AzureRM provider returned:
+The CI identity has:
 
 ```text
-Provider produced inconsistent result after apply
+Contributor
+└── rg-ecsp-dev
+
+Storage Blob Data Contributor
+└── Terraform state container
 ```
 
-The resource existed in Azure but was not recorded in Terraform state.
+It does not have `Owner` or permission to manage Azure RBAC.
 
-An AzureRM import also failed while reconciling the Shared-Key-disabled Storage Account.
+### `environments/dev`
 
-The resource was verified independently with Azure CLI, then management was switched to `azapi_resource` and the existing Storage Account was imported.
+Contains the application environment:
 
-Azure's existing `blobServices/default` resource was also imported before applying the required versioning and retention settings.
+- Linux App Service
+- user-assigned managed identity
+- VNet and NSGs
+- Private Endpoints and Private DNS
+- Storage
+- Key Vault
+- Azure SQL
+- Azure Policy assignments
+- Log Analytics and diagnostic settings
 
-This allowed the original security requirement to remain unchanged:
+The DEV root references the resource group created by the platform root rather than owning it. Destroying the workload therefore does not remove the deployment boundary required to recreate it.
+
+## State separation
+
+The project uses separate state files:
 
 ```text
-Shared Key authentication = disabled
+bootstrap.tfstate
+identity.tfstate
+dev.tfstate
 ```
 
-The incident is documented because it is a useful example of reconciling live Azure resources with Terraform state without unnecessarily recreating infrastructure.
+This keeps different infrastructure lifecycles independent.
 
-## DEV environment
+For example, the DEV application can be destroyed without removing either the Terraform backend or the GitHub deployment identity.
 
-The DEV root currently establishes the environment pattern with:
+State files are not stored in Git.
+
+## Authentication
+
+Local administrative Terraform operations use the signed-in Azure CLI identity.
+
+GitHub Actions uses workload identity federation:
 
 ```text
-rg-ecsp-dev
+GitHub Actions
+      ↓
+GitHub OIDC token
+      ↓
+Microsoft Entra ID
+      ↓
+id-ecsp-github-ci
+      ↓
+Azure RBAC
 ```
 
-It uses:
+No Azure client secret is required for CI.
 
-- its own remote state
-- variables for configurable values
-- locals for naming and common tags
-- outputs for useful resource information
+The application uses a separate managed identity for access to Storage, Key Vault and Azure SQL.
 
-Additional application, identity and networking resources will be added in later stages.
+## CI
 
-## CI validation
-
-Terraform configuration is validated through GitHub Actions.
-
-The current workflow runs against both:
+GitHub Actions validates all three Terraform roots:
 
 ```text
 terraform/bootstrap
+terraform/platform
 terraform/environments/dev
 ```
 
-and performs:
+Pull requests run:
 
-```text
+```bash
 terraform fmt -check
 terraform init -backend=false
 terraform validate
-TFLint
-Checkov
+tflint
+checkov
 ```
 
-`terraform init -backend=false` is used because the current CI workflow performs static validation only and does not authenticate to Azure.
+Checkov is pinned in the workflow to keep security scanning reproducible.
 
-Azure authentication for GitHub Actions will be added separately using OIDC.
+Pushes to `main` run an authenticated Terraform plan for DEV using OIDC.
 
-## State locking and rebuild validation
+Applying DEV is a manual `workflow_dispatch` action.
 
-Remote state locking was tested using concurrent Terraform operations.
+## Security scanning
 
-A second Terraform process was unable to acquire the DEV state lock while another operation was holding it.
+Checkov findings are handled individually.
 
-The DEV environment was also destroyed and recreated successfully from Terraform configuration.
+Where a control can reasonably be implemented in DEV, it is implemented. Findings that are not applicable or represent intentional DEV trade-offs are suppressed beside the affected resource with an explanation.
 
-Destroying DEV did not affect the backend or `bootstrap.tfstate`.
+Examples include:
 
-## Repository safeguards
+- production HA requirements on low-cost DEV SKUs
+- Key Vault purge protection in a disposable environment
+- Storage LRS in DEV
+- public App Service ingress retained for external testing
 
-Terraform runtime and local state files are excluded from Git.
-
-Relevant exclusions include:
-
-```gitignore
-**/.terraform/*
-*.tfstate
-*.tfstate.*
-*.tfplan
-
-*.tfvars
-*.tfvars.json
-!*.example.tfvars
-
-.terraformrc
-terraform.rc
-```
-
-`.terraform.lock.hcl` is intentionally committed.
+The CI security gate was validated with an intentionally insecure Internet-accessible SSH rule. Terraform validation passed, while Checkov blocked the change before deployment.
 
 ## Local workflow
 
-Typical workflow:
+For a Terraform root:
 
 ```bash
 terraform fmt
+terraform init
 terraform validate
 terraform plan
-terraform apply
 ```
 
-Destructive changes should be reviewed first with:
+DEV also requires the Entra SQL administrator variables:
+
+```bash
+export TF_VAR_sql_entra_admin_login="$(az ad signed-in-user show --query userPrincipalName -o tsv)"
+export TF_VAR_sql_entra_admin_object_id="$(az ad signed-in-user show --query id -o tsv)"
+```
+
+Before destructive operations:
 
 ```bash
 terraform plan -destroy
 ```
+
+The DEV environment is designed to be disposable. The bootstrap and platform roots should be treated separately because they contain infrastructure required to recreate DEV.

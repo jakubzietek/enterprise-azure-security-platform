@@ -1,30 +1,99 @@
 # Security Requirements
 
-This document defines the intended security baseline for the FinTechCo Azure Enterprise Cloud Security Platform. It reflects the architecture and initial threat model; the controls below are planned and will be implemented progressively through later milestones.
+This document defines the security baseline used for the Azure DEV environment.
+
+The controls are based on the project threat model and are implemented where practical in the current lab. Production-only controls are documented separately where cost or operational complexity would not add useful validation.
 
 ## Identity and deployment
 
-- Infrastructure will be deployed with Terraform. Terraform state will be stored remotely and will not be committed to the repository.
-- GitHub Actions will authenticate to Azure through OpenID Connect workload federation. Azure client secrets will not be used for CI/CD authentication.
-- CI/CD permissions will be limited to the repository, environment, and Azure scope required for deployment.
-- Human, workload, and CI identities will follow least privilege. Broad administrative roles will require justification.
+- Infrastructure is managed with Terraform.
+- Terraform state is stored remotely in Azure Blob Storage and is not committed to Git.
+- GitHub Actions authenticates to Azure through OIDC federation rather than a client secret.
+- CI permissions are limited to the DEV deployment scope and Terraform state access.
+- Human administration, CI deployment and application workload access use separate identities.
+- The application uses a managed identity instead of stored Azure credentials.
 
-## Workload and data protection
+## Data access
 
-- The application will use a managed identity to access Azure SQL, the application Storage account, and Key Vault.
-- Application code, Terraform configuration, and GitHub Actions workflows will not contain long-lived credentials.
-- Azure SQL, the application Storage account, and Key Vault will be accessed through Private Endpoints and Private DNS. Public network access will be disabled.
-- The application will enforce HTTPS, validate input, use parameterized database queries, and authorize access to customer data.
+- Azure Storage, Key Vault and Azure SQL are accessed through Private Endpoints and Private DNS.
+- Public network access is disabled on those data services.
+- Storage Shared Key authentication is disabled.
+- Azure SQL uses Entra-only authentication.
+- Application permissions follow least privilege.
 
-## Governance and monitoring
+Current application permissions are limited to:
 
-- Azure Policy will enforce selected guardrails, including restrictions on public access to sensitive application PaaS services.
-- Changes to RBAC, Azure Policy, diagnostic settings, and public-access configuration will be logged in Log Analytics.
-- Detection content will be based on the threat model and will cover material identity, configuration, and data-access events.
-- Terraform and workflow changes will be reviewed through pull requests and checked with Terraform validation, TFLint, and Checkov.
+- Blob access on the required Storage container
+- Key Vault secret reads
+- SQL `SELECT` and `INSERT` on the required table
 
-## Lab boundary
+Negative tests verify that broader Storage enumeration, Key Vault writes and SQL deletes are denied.
 
-The lab is designed to implement the private application data tier, managed identities, RBAC, Terraform, GitHub OIDC, policy, and telemetry controls. Application Gateway WAF and centralized Azure Firewall egress remain part of the production reference design unless temporarily deployed for a documented validation exercise.
+## Application and network
 
-Terraform state is handled separately in ADR-003 because GitHub-hosted Actions require a different access model from the private application data tier.
+- App Service enforces HTTPS.
+- FTP deployment is disabled.
+- App Service uses VNet Integration for access to private services.
+- Application and Private Endpoint traffic is separated into dedicated subnets.
+- NSGs restrict unintended VNet traffic.
+
+The App Service frontend remains publicly reachable in DEV for validation. Production ingress would require additional controls such as authenticated access and WAF-controlled exposure.
+
+## Governance
+
+Azure Policy enforces selected DEV guardrails:
+
+- required `environment` tag
+- Storage public network access disabled
+- Key Vault public network access disabled
+- App Service HTTPS-only
+
+Policy enforcement is treated as an additional platform control rather than relying only on Terraform configuration.
+
+## CI security
+
+Terraform changes are checked through GitHub Actions with:
+
+```text id="fb4myy"
+terraform fmt
+terraform validate
+TFLint
+Checkov
+```
+
+Checkov is version-pinned in CI.
+
+Security scanner exceptions are documented beside the affected Terraform resource with the reason the control is not applicable or is intentionally different in DEV.
+
+An intentionally insecure SSH rule was used to verify that the CI security gate blocks unsafe Terraform before deployment.
+
+## Logging and detection
+
+Security-relevant telemetry is centralized in Log Analytics.
+
+Collected sources include:
+
+- Azure Activity Log
+- Key Vault audit events
+- Azure SQL security auditing
+- Storage Blob operations
+- App Service HTTP logs
+
+KQL detections cover selected identity and authorization events, including denied Key Vault secret writes and Azure RBAC assignment changes.
+
+## DEV boundary
+
+The environment is designed to be disposable and cost-conscious.
+
+The following are intentional DEV trade-offs:
+
+- public App Service ingress
+- single-instance B1 App Service plan
+- Azure SQL Basic tier
+- Storage LRS
+- Key Vault purge protection disabled
+- shorter Log Analytics retention
+
+These are not intended as production defaults.
+
+Production design would apply stronger availability, recovery, ingress, monitoring and organizational controls based on workload requirements.

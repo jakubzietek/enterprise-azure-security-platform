@@ -1,278 +1,168 @@
 # Network Architecture
 
-The DEV environment uses Azure App Service VNet Integration, Private Endpoints, Private DNS, and subnet-level NSGs to provide private application-to-data connectivity.
+The DEV environment keeps the application publicly reachable for testing, while Storage, Key Vault and Azure SQL are reachable only through private Azure networking.
 
-The current implementation exposes the web application publicly while keeping access to sensitive PaaS data services on private Azure networking.
-
-## DEV Architecture
+## Architecture
 
 ```mermaid
 flowchart LR
     Internet((Internet))
 
-    subgraph Azure["Azure DEV Environment"]
-        App["Linux Web App<br/>app-ecsp-dev-jz"]
+    subgraph Azure["Azure DEV"]
+        App["Linux App Service"]
 
         subgraph VNet["vnet-ecsp-dev<br/>10.20.0.0/16"]
-            AppSubnet["snet-app-integration<br/>10.20.1.0/24<br/>App Service delegated"]
-            PESubnet["snet-private-endpoints<br/>10.20.2.0/24"]
-            PE["Blob Private Endpoint<br/>10.20.2.4"]
+            AppSubnet["App integration subnet<br/>10.20.1.0/24"]
+            PESubnet["Private endpoint subnet<br/>10.20.2.0/24"]
+
+            PEStorage["Storage PE"]
+            PEKV["Key Vault PE"]
+            PESQL["SQL PE"]
         end
 
-        DNS["Private DNS Zone<br/>privatelink.blob.core.windows.net"]
-        Storage["Storage Account<br/>stecspappdevjz<br/>Public network access disabled"]
+        Storage["Storage Account"]
+        KV["Key Vault"]
+        SQL["Azure SQL"]
+
+        DNS["Private DNS"]
     end
 
     Internet -->|HTTPS| App
+
     App -->|VNet Integration| AppSubnet
-    AppSubnet -->|HTTPS 443| PE
-    PE --> Storage
-    DNS -.->|Resolves Storage hostname to 10.20.2.4| AppSubnet
+    AppSubnet --> PESubnet
+
+    PESubnet --> PEStorage
+    PESubnet --> PEKV
+    PESubnet --> PESQL
+
+    PEStorage --> Storage
+    PEKV --> KV
+    PESQL --> SQL
+
+    DNS -.-> AppSubnet
 ```
 
-## Network Layout
+The App Service frontend remains public in DEV. Public network access is disabled on Storage, Key Vault and Azure SQL.
 
-The DEV VNet uses the address space:
+## Network layout
+
+The VNet uses:
 
 ```text
 10.20.0.0/16
 ```
 
-It currently contains two dedicated subnets:
+with two subnets:
 
-| Subnet | Address range | Purpose |
+| Subnet | Range | Purpose |
 |---|---|---|
 | `snet-app-integration` | `10.20.1.0/24` | App Service VNet Integration |
-| `snet-private-endpoints` | `10.20.2.0/24` | Private Endpoints for sensitive PaaS services |
+| `snet-private-endpoints` | `10.20.2.0/24` | Private Endpoints |
 
-The application integration subnet is delegated to:
+The application subnet is delegated to:
 
 ```text
 Microsoft.Web/serverFarms
 ```
 
-The Private Endpoint subnet is kept separate from the application subnet so network policy and traffic flows can be controlled independently.
+Private Endpoints are kept in a separate subnet so their traffic can be controlled independently.
 
-## App Service Networking
+## Application traffic
 
-The Linux Web App is integrated with:
+The application uses App Service VNet Integration for outbound access.
 
-```text
-snet-app-integration
-```
-
-VNet Integration provides outbound connectivity from App Service into resources reachable through the VNet.
-
-It does not make the application's public frontend private.
-
-The intended DEV traffic model is therefore:
+The intended path to data services is:
 
 ```text
-Internet
-    |
-    v
-Public App Service endpoint
-    |
-    v
 App Service
-    |
-    | outbound through VNet Integration
-    v
-snet-app-integration
-    |
-    v
+    ↓
+App integration subnet
+    ↓
+Private DNS resolution
+    ↓
 Private Endpoint
-    |
-    v
-Sensitive PaaS service
+    ↓
+Azure PaaS service
 ```
 
-A production deployment would place additional ingress controls such as Application Gateway and WAF in front of the application.
+The application still uses the normal Azure service hostnames. Private DNS changes where those hostnames resolve from inside the VNet.
 
-## Private Endpoint
+## Private Endpoints
 
-The application Storage Account exposes its Blob service through a Private Endpoint located in:
+Private Endpoints are configured for:
 
-```text
-snet-private-endpoints
-```
+- Azure Storage Blob
+- Azure Key Vault
+- Azure SQL
 
-The Private Endpoint received the address:
+Public network access is disabled on all three services.
 
-```text
-10.20.2.4
-```
-
-The Storage Account has public network access disabled.
-
-The application therefore reaches the Blob service through:
-
-```text
-App Service
-    |
-    v
-snet-app-integration
-    |
-    v
-10.20.2.4
-    |
-    v
-Blob Private Endpoint
-    |
-    v
-Azure Storage
-```
+This means application access to the data tier does not depend on the public Azure service endpoints.
 
 ## Private DNS
 
-The following Private DNS zone is used for Blob Storage:
+The VNet is linked to:
 
 ```text
 privatelink.blob.core.windows.net
+privatelink.vaultcore.azure.net
+privatelink.database.windows.net
 ```
 
-The zone is linked to `vnet-ecsp-dev`.
+The application therefore connects using standard service names while DNS resolves them to the corresponding private endpoint addresses.
 
-The Private Endpoint DNS zone group creates and manages the Storage Account record in the private zone.
-
-From the App Service environment, the standard Storage hostname resolves as:
+For example:
 
 ```text
 stecspappdevjz.blob.core.windows.net
-    |
-    v
+        ↓
 stecspappdevjz.privatelink.blob.core.windows.net
-    |
-    v
-10.20.2.4
+        ↓
+Private Endpoint IP
 ```
 
-Applications continue to use the normal Azure Storage hostname:
-
-```text
-stecspappdevjz.blob.core.windows.net
-```
-
-They do not need to explicitly use the `privatelink` hostname.
+The same pattern is used for Key Vault and Azure SQL.
 
 ## Network Security Groups
 
-Separate NSGs are associated with the application integration and Private Endpoint subnets.
+Both subnets have dedicated NSGs.
 
-The current DEV policy allows application traffic from:
+The App Service integration subnet allows traffic toward the Private Endpoint subnet and denies other VNet destinations.
 
-```text
-10.20.1.0/24
-```
+The Private Endpoint subnet allows traffic from the application subnet and denies other VNet-originated traffic.
 
-to the Private Endpoint subnet:
+These controls are intentionally simple because the environment contains a single application path rather than a larger multi-tier network.
 
-```text
-10.20.2.0/24
-```
+## Validation
 
-while denying unintended traffic between other VNet destinations.
+The private data path was tested from the application environment.
 
-The current rules are intentionally broader than the final application-specific policy because the remaining PaaS services and required application flows will be introduced in later stages.
+Storage, Key Vault and Azure SQL were successfully accessed through the workload managed identity while public network access remained disabled.
 
-## Connectivity Validation
+Storage connectivity was also tested from outside the VNet. The public service endpoint remained unreachable because of the Storage network configuration.
 
-Private connectivity was validated from inside the App Service environment.
+### DNS failure test
 
-DNS resolution returned the Private Endpoint:
+The Blob Private DNS VNet link was deliberately removed while the Private Endpoint itself remained in place.
 
-```text
-stecspappdevjz.blob.core.windows.net
-→ stecspappdevjz.privatelink.blob.core.windows.net
-→ 10.20.2.4
-```
+The application then resolved the Storage hostname to the public Azure endpoint instead of the private address, breaking the intended data path.
 
-HTTPS connectivity then successfully established a connection to:
+Restoring the VNet link restored private resolution and connectivity.
 
-```text
-10.20.2.4:443
-```
+This test demonstrated that a Private Endpoint alone is not enough; correct DNS configuration is part of the security design.
 
-including a successful TLS handshake with Azure Storage.
+## DEV boundary
 
-This validated the path:
+The current environment deliberately keeps App Service ingress public so the application can be tested without deploying a production ingress stack.
 
-```text
-App Service
-→ VNet Integration
-→ Private DNS
-→ Private Endpoint
-→ Azure Storage
-```
+A production design would typically add controls such as:
 
-## Public Path Validation
+- Application Gateway or another controlled ingress layer
+- WAF
+- stronger subnet and egress segmentation
+- hub-and-spoke networking where appropriate
+- centralized firewalling or egress inspection
+- production-grade availability
 
-The same Storage hostname was queried from outside the Azure VNet.
-
-It resolved to the public Azure Storage endpoint:
-
-```text
-stecspappdevjz.blob.core.windows.net
-→ 20.209.95.65
-```
-
-A valid authenticated Blob API operation from the external client was rejected by the Storage Account network policy.
-
-This demonstrated that:
-
-```text
-Inside VNet
-→ private DNS resolution
-→ Private Endpoint
-→ permitted
-
-Outside VNet
-→ public DNS resolution
-→ public Storage endpoint
-→ blocked by Storage network policy
-```
-
-## DNS Failure Test
-
-Private DNS behavior was deliberately broken by removing the Blob Private DNS zone VNet link.
-
-The Private Endpoint itself remained healthy.
-
-After removing the DNS link, the App Service resolved the Storage hostname to the public endpoint:
-
-```text
-stecspappdevjz.blob.core.windows.net
-→ 20.209.95.65
-```
-
-instead of:
-
-```text
-10.20.2.4
-```
-
-This demonstrated that creating a Private Endpoint alone is not sufficient. Workloads must also have correct DNS resolution for the Private Link path to be used.
-
-Restoring the VNet link restored resolution to:
-
-```text
-10.20.2.4
-```
-
-and the private path became available again.
-
-## Production Reference
-
-The DEV environment intentionally uses a reduced-cost architecture.
-
-The production reference design extends the same principles with:
-
-- Application Gateway and WAF for controlled application ingress
-- hub-and-spoke networking
-- centralized Azure Firewall egress control
-- multiple subscriptions and management groups
-- stronger network segmentation
-- Private Endpoints for Storage, Key Vault, and SQL
-- centralized monitoring and security telemetry
-
-The DEV environment is designed to validate the same core security patterns without requiring the full production infrastructure.
+Those components are outside the current lab scope because they are not required to demonstrate the private application-to-data path.
