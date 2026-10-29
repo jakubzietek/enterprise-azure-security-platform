@@ -1,0 +1,16 @@
+AzureActivity
+| where TimeGenerated > ago(1h)
+| where OperationNameValue in~ (
+    "MICROSOFT.AUTHORIZATION/ROLEASSIGNMENTS/WRITE",
+    "MICROSOFT.AUTHORIZATION/ROLEASSIGNMENTS/DELETE"
+)
+| where ActivityStatusValue == "Success"
+| project
+    TimeGenerated,
+    Caller,
+    OperationNameValue,
+    ActivityStatusValue,
+    ResourceGroup,
+    ResourceId,
+    CorrelationId
+| order by TimeGenerated desc

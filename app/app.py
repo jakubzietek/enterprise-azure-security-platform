@@ -128,6 +128,34 @@ def keyvault_test():
             "status": "error",
             "error_type": type(exc).__name__,
         }), 500
+    
+@app.get("/keyvault-negative-test")
+def keyvault_negative_test():
+    try:
+        secret_client.set_secret(
+            "m6-denied-write-test",
+            "this-should-never-be-created",
+        )
+
+        return jsonify({
+            "status": "failure",
+            "message": "Managed identity unexpectedly had permission to create secrets."
+        }), 500
+
+    except HttpResponseError as exc:
+        if exc.status_code == 403:
+            return jsonify({
+                "status": "success",
+                "test": "least-privilege",
+                "expected_result": "403 Forbidden",
+                "message": "Managed identity cannot create or modify Key Vault secrets."
+            })
+
+        return jsonify({
+            "status": "error",
+            "status_code": exc.status_code,
+            "error_type": type(exc).__name__,
+        }), 500
 
 @app.get("/sql-test")
 def sql_test():
