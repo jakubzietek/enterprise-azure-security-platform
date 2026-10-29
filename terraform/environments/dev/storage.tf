@@ -5,6 +5,9 @@ resource "azurerm_storage_account" "app" {
   # checkov:skip=CKV2_AZURE_1:CMK is outside the current lab baseline; Azure-managed encryption is used.
   # checkov:skip=CKV2_AZURE_18:CMK is outside the current lab baseline; Azure-managed encryption is used.
   # checkov:skip=CKV2_AZURE_8:This account stores application data, not Azure activity logs; the application container is explicitly private.
+  # checkov:skip=CKV2_AZURE_38:Blob soft delete is intentionally disabled in disposable DEV; the environment is frequently rebuilt and contains no production data requiring recovery.
+  # checkov:skip=CKV_AZURE_206:LRS is intentionally used in disposable DEV to minimize cost; production storage would use an appropriate redundant replication tier.
+  # checkov:skip=CKV_AZURE_59:Public network access is explicitly disabled with public_network_access = "Disabled"; this finding is a scanner mismatch with the current AzureRM configuration.
 
   name                = "stecspappdevjz"
   resource_group_name = data.azurerm_resource_group.dev.name
@@ -16,6 +19,7 @@ resource "azurerm_storage_account" "app" {
   https_traffic_only_enabled      = true
   min_tls_version                 = "TLS1_2"
   allow_nested_items_to_be_public = false
+  shared_access_key_enabled       = false
 
   public_network_access = "Disabled"
 
